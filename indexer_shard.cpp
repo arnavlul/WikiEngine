@@ -50,7 +50,7 @@ int main(int argc, char* argv[]){
         index[term].push_back({doc_id, score});
 
         termcounter++;
-        if(termcounter % 100000 == 0){
+        if(termcounter % 200000 == 0){
             auto chunk_current_time = chrono::high_resolution_clock::now();
             auto chunk_duration = chrono::duration_cast<chrono::milliseconds>(chunk_current_time - chunk_start_time);
             auto abs_duration = chrono::duration_cast<chrono::seconds>(chunk_current_time - abs_start_time).count();
@@ -84,7 +84,11 @@ int main(int argc, char* argv[]){
         const vector<Posting>& posts = pair.second;
 
         long long pos = bin_file.tellp();
-        offset_file << term << " " << pos << "\n";
+        
+        offset_file.write(term.c_str(), term.length());
+        offset_file.put(' ');
+        offset_file << pos;
+        offset_file.put('\n');
 
         int docfreq = posts.size();
         bin_file.write(reinterpret_cast<const char*>(&docfreq), sizeof(docfreq));
