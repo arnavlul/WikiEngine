@@ -10,13 +10,16 @@ using json = nlohmann::json;
 using namespace std;
 
 const string DOC_INFO_PATH = "data_files\\doc_info.jsonl";
-const string TRIE_BINARY_PATH = "trie.bin";
+const string TRIE_BINARY_PATH = "trie2.bin";
+const string PAGERANK_SCORES_PATH = "pagerank_scores.csv";
+
+unordered_map<int, double> pagerank_scores;
 
 struct TrieNode{
     map<char, TrieNode*> children;
     bool isEnd;
     string fullTitle;
-    int score;
+    double score;
     int pageId;
 
     TrieNode(){
@@ -31,17 +34,19 @@ struct TrieNode{
 struct Suggestion{
     string title;
     int pageId;
-    int score;
+    double score;
 };
 
 class Trie{
 private:
     TrieNode* root;
+    long long nodesSaved;
+    long long totalNodes;
 
     void dfs(TrieNode* node, vector<Suggestion>& results){
 
         if(node->isEnd){
-                results.push_back({node->fullTitle, node->score});
+                results.push_back({node->fullTitle, node->pageId, node->score});
         }
 
         for(auto const&[key, child] : node->children){
@@ -59,6 +64,12 @@ private:
 
     void serialize(TrieNode* node, ofstream& out){
         if(!node) return;
+
+        nodesSaved++;
+        if(nodesSaved % 100000 == 0){
+            cout << "Saving Trie: " << nodesSaved << " nodes written. Progress: " << (nodesSaved*100.0) / totalNodes << "%.\r";
+        } 
+
 
         out.write(reinterpret_cast<const char*>(&node->isEnd), sizeof(node->isEnd));
         
@@ -116,17 +127,21 @@ public:
 
     Trie(){
         root = new TrieNode();
+        nodesSaved = 0;
+        totalNodes = 1;
     }
 
-    ~Trie(){
-        deleteNodes(root);
-    }
+    // ~Trie(){
+    //     deleteNodes(root);
+    // }
 
-    void insert(const string& title, int score, int pageId){
+    void insert(const string& title, double score, int pageId){
         TrieNode* current = root;
         for(char ch : title){
+            ch = tolower(ch);
             if(current->children.find(ch) == current->children.end()){
                 current->children[ch] = new TrieNode();
+                totalNodes++;
             }
             current = current->children[ch];
         }
@@ -141,6 +156,7 @@ public:
         vector<Suggestion> candidates;
 
         for(char ch : prefix){
+            ch = tolower(ch);
             if(current->children.find(ch) == current->children.end()){
                 return {};
             }
@@ -174,7 +190,7 @@ public:
     }
 
     bool buildFromJSON(const string& filename){
-        cout << "\n----- Building Trie from JSONL ------" << endl;
+        cout << "Building Trie from JSONL" << endl;
         ifstream infile(filename);
         static char buffer[1024*1024];
         infile.rdbuf()->pubsetbuf(buffer, sizeof(buffer));
@@ -194,13 +210,20 @@ public:
             try{
                 auto j = json::parse(line);
                 int pageId = j["id"];
-                int len = j["len"];
+                double len;
+                auto it = pagerank_scores.find(pageId);
+                if(it == pagerank_scores.end()){
+                    len = 0;
+                }
+                else{
+                    len = it->second;
+                }
                 string title = j["title"];
 
                 this->insert(title, len, pageId);
                 count++;
 
-                if(count%10000 == 0){
+                if(count%100000 == 0){
                     auto current_time = chrono::high_resolution_clock::now();
                     auto batch_duration = chrono::duration_cast<chrono::milliseconds>(current_time-batch_start_time);
                     auto total_duration = chrono::duration_cast<chrono::seconds>(current_time - start_time).count();
@@ -238,6 +261,45 @@ public:
 
 };
 
+void load_pagerank_scores(){
+    cout << "Loading pagerank scores..." << endl;
+    ifstream infile(PAGERANK_SCORES_PATH);
+    if(!infile.is_open()){
+        cerr << "Error: Pagerank file could not be opened";
+        exit(1);
+    }
+
+
+    pagerank_scores.reserve(7084107);
+    string line;
+    long long count = 0;
+
+    while(getline(infile, line)){
+        size_t comma_pos = line.find(',');
+        if(comma_pos == string::npos) continue;
+        try{
+            int doc_id = stoi(line.substr(0, comma_pos));
+            double score = stod(line.substr(comma_pos+1));
+
+            pagerank_scores[doc_id] = score;
+            count++;
+
+            if(count % 10000 == 0){
+                cout << count << " pages processed for pagerank.\r" << flush;
+            }
+
+        }
+        catch(exception &e){
+            cout << "Error: " << e.what() << endl;
+            continue;
+        }
+    }
+
+    cout << "\nPagerank scores loaded..." << endl;
+    return;
+
+}
+
 
 int main(int argc, char* argv[]){
 
@@ -247,21 +309,34 @@ int main(int argc, char* argv[]){
     cout << "----- AutoComplete Trie -----" << endl;
 
     if(mode == "build"){
+        auto start_time = chrono::high_resolution_clock::now();
+        load_pagerank_scores();
         if(trie.buildFromJSON(DOC_INFO_PATH)){
             trie.saveToDisk(TRIE_BINARY_PATH);
-            cout << "----- Trie saved to Disk -----" << endl;
+            auto end_time = chrono::high_resolution_clock::now();
+            auto duration = chrono::duration_cast<chrono::seconds>(end_time-start_time).count();
+            int minutes = duration / 60;
+            int seconds = duration % 60;
+            cout << "\n----- Trie saved to Disk -----" << endl;
+            cout << "Time: " << minutes << " min, " << seconds << " sec." << endl;
         }
+
         return 0;
     }
 
+    auto start_time = chrono::high_resolution_clock::now();
     bool loaded = trie.loadFromDisk(TRIE_BINARY_PATH);
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::seconds>(end_time-start_time).count();
+    int minutes = duration/60;
+    int seconds = duration%60;
     
     if(!loaded){
         cerr << "Error: could not load binary file" << endl;
         return 1;
     }
 
-    cout << "Index ready" << endl;
+    cout << "Index ready in " << minutes << " min, " << seconds << " sec." << endl;
 
     string input;
     cout << "\nType a prefix to search (or 'exit'): " << endl;
@@ -275,14 +350,14 @@ int main(int argc, char* argv[]){
         auto start_time = chrono::high_resolution_clock::now();
         vector<Suggestion> sg = trie.getSuggestion(input);
         auto end_time = chrono::high_resolution_clock::now();
-        auto duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
+        auto duration = chrono::duration_cast<chrono::microseconds>(end_time - start_time);
 
         if(sg.empty()){
             cout << "No suggestions found in " << duration.count() / 1000.0 << " sec." << endl;
             continue;
         }
         else{
-            cout << "Found " << sg.size() << " suggestions in " << duration.count() / 1000.0  << " sec." << endl;
+            cout << "Found " << sg.size() << " suggestions in " << duration.count()  << " us." << endl;
             for(int i=0; i<sg.size(); i++){
                 const Suggestion& s = sg[i];
 

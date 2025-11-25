@@ -19,11 +19,14 @@ const string OFFSET_FILE = "BinsAndTxtx\\offset.txt";
 const string DOC_INFO_FILE=  "data_files\\doc_info.jsonl";
 const string PYTHON_STEMMER_SCRIPT = "stemmer_bridge.py";
 const string STOPWORD_FILE = "stopwords.txt";
+const string PAGERANK_SCORES_PATH = "pagerank_scores.csv";
+const float alpha = 0.2;
 
 unordered_map<int, pair<string, int>> doc_details;
 double avg_doc_length = 0.0;
 
 unordered_set<string> stopwords;
+unordered_map<int, double> pagerank_scores;
 
 struct Posting{
     int doc_id;
@@ -111,6 +114,45 @@ void load_stopwords(){
     cout << "Stopwords Loaded\n";
 }
 
+void load_pagerank_scores(){
+    cout << "Loading pagerank scores..." << endl;
+    ifstream infile(PAGERANK_SCORES_PATH);
+    if(!infile.is_open()){
+        cerr << "Error: Pagerank file could not be opened";
+        exit(1);
+    }
+
+
+    pagerank_scores.reserve(7084107);
+    string line;
+    long long count = 0;
+
+    while(getline(infile, line)){
+        size_t comma_pos = line.find(',');
+        if(comma_pos == string::npos) continue;
+        try{
+            int doc_id = stoi(line.substr(0, comma_pos));
+            double score = stod(line.substr(comma_pos+1));
+
+            pagerank_scores[doc_id] = score;
+            count++;
+
+            if(count % 10000 == 0){
+                cout << count << " pages processed for pagerank.\r" << flush;
+            }
+
+        }
+        catch(exception &e){
+            cout << "Error: " << e.what() << endl;
+            continue;
+        }
+    }
+
+    cout << "\nPagerank scores loaded..." << endl;
+    return;
+
+}
+
 
 int main(){
 
@@ -118,7 +160,8 @@ int main(){
     cout << "Loading Dictionary..." << endl;
 
     load_titles();
-    load_stopwords();    
+    load_stopwords();   
+    load_pagerank_scores(); 
 
     unordered_map<string, long long> offsets;
     ifstream offset_file(OFFSET_FILE);
@@ -244,7 +287,9 @@ int main(){
                 double denominator = raw_freq + k1 * (1 - b + b * ((double) doc_len / avg_doc_length));
                 double bm25_score = idf * (numerator / denominator);
 
-                doc_scores[p.doc_id] += bm25_score;
+                double pgscore = pagerank_scores[p.doc_id];
+                double pgnorm = log(1.0 + pgscore * pagerank_scores.size());
+                doc_scores[p.doc_id] += bm25_score + alpha * pgnorm;
             }
         }
         
@@ -267,6 +312,7 @@ int main(){
         });
 
         cout << "Found " << ranked_results.size() << " raw matches. Filtering results..." << endl;
+        cout << "Time: " << duration.count() << " ms." << endl;
         
         int printed_count = 0;
         int max_results = 10;
