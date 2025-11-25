@@ -1,4 +1,3 @@
-#include "porterStemmer.hpp"
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
