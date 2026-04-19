@@ -1,0 +1,62 @@
+# Executables
+*.exe
+*.out
+*.app
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Binary Data (The "gigs of data")
+*.bin
+trie.bin
+trie2.bin
+BinsAndTxtx/
+
+# Large Datasets
+data_files/
+*.csv
+*.jsonl
+!stopwords.txt
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.qtcreator/
+*.user
+.git_backup/
+
+# Build systems
+build/
+WikiEngineGUI/build/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
